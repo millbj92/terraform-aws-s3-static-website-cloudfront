@@ -1,37 +1,43 @@
 
-
+provider "aws" {
+  region = var.region
+}
 provider "aws" {
   //This provider is needed as cloudfront needs us-east-1
   region = "us-east-1"
   alias  = "aws_cloudfront"
 }
 
+provider "aws" {
+  region = var.s3_replication_region
+  alias  = "aws_replication"
+}
+
 locals {
-  domain_name = var.use_cloudfront_domain ? [] : [var.s3_bucket_name]
+  domain_name = var.use_cloudfront_domain ? [] : [var.s3_primary_bucket_name]
+  s3_redirect = var.s3_bucket_redirect != null || var.s3_routing_policy != null
 }
 resource "aws_kms_key" "log_bucket" {
   count                   = var.s3_enable_logging && var.s3_use_bucket_encryption ? 1 : 0
   description             = "KMS Key for log bucket"
   deletion_window_in_days = 30
   enable_key_rotation     = var.kms_enable_key_rotation
+  tags                    = var.tags
 }
 
 resource "aws_s3_bucket" "log_bucket" {
   count         = var.s3_enable_logging ? 1 : 0
-  bucket        = "${var.s3_bucket_name}-logs"
+  bucket        = "logs-${var.s3_primary_bucket_name}"
   acl           = "log-delivery-write"
   tags          = var.tags
   force_destroy = var.s3_force_destroy
-  versioning {
-    enabled = true
-  }
 
   dynamic "lifecycle_rule" {
     for_each = var.s3_enable_log_lifecycle ? [1] : []
     content {
-      id      = "log"
+      id      = "log-${var.s3_primary_bucket_name}"
       enabled = true
-      prefix  = "website/"
+      prefix  = ""
 
       tags = {
         rule      = "log"
@@ -65,6 +71,8 @@ resource "aws_s3_bucket" "log_bucket" {
       }
     }
   }
+
+  tags_all = var.tags
 }
 
 data "aws_iam_policy_document" "s3_bucket_policy" {
@@ -74,7 +82,7 @@ data "aws_iam_policy_document" "s3_bucket_policy" {
       "s3:GetObject",
     ]
     resources = [
-      "arn:aws:s3:::${var.s3_bucket_name}/*",
+      "arn:aws:s3:::${var.s3_primary_bucket_name}/*",
     ]
     principals {
       type = "AWS"
@@ -85,10 +93,88 @@ data "aws_iam_policy_document" "s3_bucket_policy" {
   }
 }
 
+data "aws_iam_policy_document" "cloudfront_failover_policy" {
+  statement {
+    sid = "1"
+    actions = [
+      "s3:GetObject",
+    ]
+    resources = [
+      "arn:aws:s3:::slot2-${var.s3_primary_bucket_name}/*",
+    ]
+    principals {
+      type = "AWS"
+      identifiers = [
+        aws_cloudfront_origin_access_identity.origin_access_identity.iam_arn,
+      ]
+    }
+  }
+}
 
-resource "aws_s3_bucket" "s3_bucket" {
-  bucket = var.s3_bucket_name
-  acl    = "private"
+resource "aws_iam_role" "replication" {
+  count = var.s3_enable_primary_bucket_replication == true ? 1 : 0
+  name  = "${var.s3_primary_bucket_name}-replication-role"
+
+  assume_role_policy = var.iam_assume_role_policy
+  tags               = var.tags
+}
+
+resource "aws_iam_policy" "replication" {
+  count = var.s3_enable_primary_bucket_replication == true ? 1 : 0
+  name  = "${var.s3_primary_bucket_name}-replication-policy"
+
+  policy = <<POLICY
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "s3:GetReplicationConfiguration",
+        "s3:ListBucket"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "${aws_s3_bucket.s3_bucket.arn}"
+      ]
+    },
+    {
+      "Action": [
+        "s3:GetObjectVersionForReplication",
+        "s3:GetObjectVersionAcl",
+         "s3:GetObjectVersionTagging"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "${aws_s3_bucket.s3_bucket.arn}/*"
+      ]
+    },
+    {
+      "Action": [
+        "s3:ReplicateObject",
+        "s3:ReplicateDelete",
+        "s3:ReplicateTags"
+      ],
+      "Effect": "Allow",
+      "Resource": "${aws_s3_bucket.replication[0].arn}/*"
+    }
+  ]
+}
+POLICY
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "replication" {
+  count      = var.s3_enable_primary_bucket_replication == true ? 1 : 0
+  role       = aws_iam_role.replication[0].name
+  policy_arn = aws_iam_policy.replication[0].arn
+}
+
+data "aws_canonical_user_id" "current_user" {}
+resource "aws_s3_bucket" "replication" {
+  count         = var.s3_enable_primary_bucket_replication == true ? 1 : 0
+  bucket        = "slot2-${var.s3_primary_bucket_name}"
+  force_destroy = var.s3_force_destroy
   versioning {
     enabled = true
   }
@@ -101,29 +187,212 @@ resource "aws_s3_bucket" "s3_bucket" {
     max_age_seconds = var.s3_cors_rules.max_age_seconds
   }
 
+  dynamic "grant" {
+    for_each = var.s3_acl_grant_canonical_user == true ? [1] : []
+    content {
+      id          = data.aws_canonical_user_id.current_user.id
+      type        = "CanonicalUser"
+      permissions = ["FULL_CONTROL"]
+    }
+  }
+
+  dynamic "grant" {
+    for_each = var.s3_primary_acl_grants
+    content {
+      id          = grant.value.id
+      type        = grant.value.type
+      permissions = grant.value.permissions
+    }
+  }
+
   dynamic "logging" {
     for_each = var.s3_enable_logging == true ? [1] : []
     content {
       target_bucket = aws_s3_bucket.log_bucket[0].id
-      target_prefix = "website/"
+      target_prefix = "slot2-${var.s3_primary_bucket_name}/"
+    }
+  }
+
+  dynamic "lifecycle_rule" {
+    for_each = var.s3_enable_primary_bucket_lifecycle == true ? [1] : []
+    content {
+      prefix  = ""
+      enabled = true
+      dynamic "noncurrent_version_transition" {
+        for_each = var.s3_primary_version_transitions
+        content {
+          days          = noncurrent_version_transition.value.days
+          storage_class = noncurrent_version_transition.value.storage_class
+        }
+      }
+    }
+  }
+
+  dynamic "website" {
+    for_each = var.s3_bucket_redirect == null && var.s3_routing_policy == null ? [1] : []
+    content {
+      index_document = "index.html"
+    }
+  }
+
+  dynamic "website" {
+    for_each = var.s3_bucket_redirect != null && var.s3_routing_policy == null ? [1] : []
+    content {
+      redirect_all_requests_to = var.s3_bucket_redirect
+    }
+  }
+  dynamic "website" {
+    for_each = var.s3_routing_policy != null && var.s3_bucket_redirect == null ? [1] : []
+    content {
+      index_document = "index.html"
+      routing_rules  = var.s3_routing_policy
+    }
+  }
+
+  policy = data.aws_iam_policy_document.cloudfront_failover_policy.json
+  tags   = var.tags
+}
+
+
+resource "aws_s3_bucket" "s3_bucket" {
+  bucket        = var.s3_primary_bucket_name
+  acl           = var.s3_primary_bucket_acl
+  force_destroy = var.s3_force_destroy
+  versioning {
+    enabled = true
+  }
+
+  cors_rule {
+    allowed_headers = length(var.s3_cors_rules.allowed_headers) > 0 ? var.s3_cors_rules.allowed_headers : []
+    allowed_methods = length(var.s3_cors_rules.allowed_methods) > 0 ? var.s3_cors_rules.allowed_methods : []
+    allowed_origins = length(var.s3_cors_rules.allowed_origins) > 0 ? var.s3_cors_rules.allowed_origins : []
+    expose_headers  = length(var.s3_cors_rules.expose_headers) > 0 ? var.s3_cors_rules.expose_headers : []
+    max_age_seconds = var.s3_cors_rules.max_age_seconds
+  }
+
+  dynamic "grant" {
+    for_each = var.s3_acl_grant_canonical_user == true ? [1] : []
+    content {
+      id          = data.aws_canonical_user_id.current_user.id
+      type        = "CanonicalUser"
+      permissions = ["FULL_CONTROL"]
+    }
+  }
+
+  dynamic "grant" {
+    for_each = var.s3_primary_acl_grants
+    content {
+      id          = grant.value.id
+      type        = grant.value.type
+      permissions = grant.value.permissions
+    }
+  }
+
+  dynamic "logging" {
+    for_each = var.s3_enable_logging == true ? [1] : []
+    content {
+      target_bucket = aws_s3_bucket.log_bucket[0].id
+      target_prefix = "${var.s3_primary_bucket_name}/"
     }
   }
 
   policy = data.aws_iam_policy_document.s3_bucket_policy.json
   tags   = var.tags
 
-  website {
-    index_document = "index.html"
+  dynamic "replication_configuration" {
+    for_each = var.s3_enable_primary_bucket_replication == true || var.cloudfront_enable_failover == true ? [1] : []
+    content {
+      role = aws_iam_role.replication[0].arn
+
+      rules {
+        id     = ""
+        prefix = ""
+        status = "Enabled"
+
+        destination {
+          bucket        = aws_s3_bucket.replication[0].arn
+          storage_class = "STANDARD"
+        }
+      }
+    }
+  }
+
+  dynamic "lifecycle_rule" {
+    for_each = var.s3_enable_primary_bucket_lifecycle == true ? [1] : []
+    content {
+      prefix  = ""
+      enabled = true
+      dynamic "noncurrent_version_transition" {
+        for_each = var.s3_primary_version_transitions
+        content {
+          days          = noncurrent_version_transition.value.days
+          storage_class = noncurrent_version_transition.value.storage_class
+        }
+      }
+    }
+  }
+
+  dynamic "website" {
+    for_each = var.s3_bucket_redirect == null && var.s3_routing_policy == null ? [1] : []
+    content {
+      index_document = "index.html"
+    }
+  }
+
+  dynamic "website" {
+    for_each = var.s3_bucket_redirect != null && var.s3_routing_policy == null ? [1] : []
+    content {
+      redirect_all_requests_to = var.s3_bucket_redirect
+    }
+  }
+  dynamic "website" {
+    for_each = var.s3_routing_policy != null && var.s3_bucket_redirect == null ? [1] : []
+    content {
+      index_document = "index.html"
+      routing_rules  = var.s3_routing_policy
+    }
   }
 }
 
+resource "random_uuid" "test" {
+}
 resource "aws_cloudfront_distribution" "s3_distribution" {
+  dynamic "origin_group" {
+    for_each = var.cloudfront_enable_failover == true ? [1] : []
+    content {
+      origin_id = "${var.s3_primary_bucket_name}-failover-group"
+
+      failover_criteria {
+        status_codes = [403, 404, 500, 502]
+      }
+
+      member {
+        origin_id = "${var.s3_primary_bucket_name}-cloudfront-primary"
+      }
+
+      member {
+        origin_id = "${var.s3_primary_bucket_name}-cloudfront-failover"
+      }
+    }
+  }
   origin {
-    domain_name = "${var.s3_bucket_name}.s3.amazonaws.com"
-    origin_id   = "s3-cloudfront"
+    domain_name = "${var.s3_primary_bucket_name}.s3.amazonaws.com"
+    origin_id   = "${var.s3_primary_bucket_name}-cloudfront-primary"
 
     s3_origin_config {
       origin_access_identity = aws_cloudfront_origin_access_identity.origin_access_identity.cloudfront_access_identity_path
+    }
+  }
+  dynamic "origin" {
+    for_each = var.cloudfront_enable_failover == true ? [1] : []
+
+    content {
+      domain_name = aws_s3_bucket.replication[0].bucket_regional_domain_name
+      origin_id   = "${var.s3_primary_bucket_name}-cloudfront-failover"
+
+      s3_origin_config {
+        origin_access_identity = aws_cloudfront_origin_access_identity.origin_access_identity2.cloudfront_access_identity_path
+      }
     }
   }
 
@@ -153,7 +422,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
       "HEAD",
     ]
 
-    target_origin_id = "s3-cloudfront"
+    target_origin_id = "${var.s3_primary_bucket_name}-failover-group"
 
     forwarded_values {
       query_string = false
@@ -205,5 +474,9 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
 }
 
 resource "aws_cloudfront_origin_access_identity" "origin_access_identity" {
-  comment = "access-identity-${var.s3_bucket_name}.s3.amazonaws.com"
+  comment = "access-identity-${var.s3_primary_bucket_name}.s3.amazonaws.com"
+}
+
+resource "aws_cloudfront_origin_access_identity" "origin_access_identity2" {
+  comment = "access-identity-${var.s3_primary_bucket_name}.s3.amazonaws.com"
 }
