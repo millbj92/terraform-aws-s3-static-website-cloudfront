@@ -49,7 +49,7 @@ No requirements.
 
 | Name | Version |
 |------|---------|
-| <a name="provider_aws"></a> [aws](#provider_aws) | 3.59.0 |
+| <a name="provider_aws"></a> [aws](#provider_aws) | n/a |
 
 #### Modules
 
