@@ -60,31 +60,31 @@ No modules.
 | Name | Type |
 |------|------|
 | [aws_cloudfront_distribution.s3_distribution](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudfront_distribution) | resource |
-| [aws_cloudfront_distribution.s3_distribution2](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudfront_distribution) | resource |
 | [aws_cloudfront_origin_access_identity.origin_access_identity](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudfront_origin_access_identity) | resource |
-| [aws_cloudfront_origin_access_identity.origin_access_identity2](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudfront_origin_access_identity) | resource |
 | [aws_kms_key.log_bucket](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_key) | resource |
 | [aws_s3_bucket.log_bucket](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket) | resource |
 | [aws_s3_bucket.s3_bucket](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket) | resource |
-| [aws_s3_bucket.s3_www_bucket2](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket) | resource |
 | [aws_iam_policy_document.s3_bucket_policy](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
-| [aws_iam_policy_document.s3_bucket_policy2](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| <a name="input_domain_name"></a> [domain\_name](#input\_domain\_name) | Domain name. Must be unique, and already registered. | `string` | n/a | yes |
+| <a name="input_s3_bucket_name"></a> [s3\_bucket\_name](#input\_s3\_bucket\_name) | Name of the bucket to be deployed | `string` | n/a | yes |
 | <a name="input_aws_certificate_arn"></a> [aws\_certificate\_arn](#input\_aws\_certificate\_arn) | SSL Certificate used to link the Cloudfront resource to the dns record. | `string` | `null` | no |
-| <a name="input_deploy_redirect_bucket"></a> [deploy\_redirect\_bucket](#input\_deploy\_redirect\_bucket) | Set this to true to deploy a bucket what will redirect from www to non-www | `bool` | `false` | no |
-| <a name="input_enable_key_rotation"></a> [enable\_key\_rotation](#input\_enable\_key\_rotation) | Set this to true in order to enable key rotation. Only works if use\_bucket\_encryption is true. Recommend setting to true so you don't get locked out of your buckets! | `bool` | `true` | no |
-| <a name="input_force_destroy"></a> [force\_destroy](#input\_force\_destroy) | This value will force-delete your buckets with files sill inside. You have been warned. Do not use in Prod. | `bool` | `false` | no |
-| <a name="input_log_cookies"></a> [log\_cookies](#input\_log\_cookies) | Log cookies in cloudfront. Only works in logging is true. | `bool` | `false` | no |
-| <a name="input_logging"></a> [logging](#input\_logging) | Use logging for resources. Will create an extra bucket. | `bool` | `true` | no |
-| <a name="input_price_class"></a> [price\_class](#input\_price\_class) | CloudFront distribution price class | `string` | `"PriceClass_100"` | no |
+| <a name="input_cloudfront_log_cookies"></a> [cloudfront\_log\_cookies](#input\_cloudfront\_log\_cookies) | Log cookies in cloudfront. Only works in logging is true. | `bool` | `false` | no |
+| <a name="input_cloudfront_price_class"></a> [cloudfront\_price\_class](#input\_cloudfront\_price\_class) | CloudFront distribution price class | `string` | `"PriceClass_100"` | no |
+| <a name="input_kms_enable_key_rotation"></a> [kms\_enable\_key\_rotation](#input\_kms\_enable\_key\_rotation) | Set this to true in order to enable key rotation. Only works if use\_bucket\_encryption is true. Recommend setting to true so you don't get locked out of your buckets! | `bool` | `true` | no |
+| <a name="input_s3_cors_rules"></a> [s3\_cors\_rules](#input\_s3\_cors\_rules) | n/a | <pre>object({<br>    allowed_headers = list(string),<br>    allowed_methods = list(string),<br>    allowed_origins = list(string),<br>    expose_headers  = list(string),<br>    max_age_seconds = number<br>  })</pre> | <pre>{<br>  "allowed_headers": [<br>    "*"<br>  ],<br>  "allowed_methods": [<br>    "GET"<br>  ],<br>  "allowed_origins": [<br>    "https://s3-website-test.hashicorp.com"<br>  ],<br>  "expose_headers": [<br>    "ETag"<br>  ],<br>  "max_age_seconds": 3000<br>}</pre> | no |
+| <a name="input_s3_enable_log_lifecycle"></a> [s3\_enable\_log\_lifecycle](#input\_s3\_enable\_log\_lifecycle) | Enable lifecycle rules on log buckets for archiving data. | `bool` | `true` | no |
+| <a name="input_s3_enable_logging"></a> [s3\_enable\_logging](#input\_s3\_enable\_logging) | Use logging for resources. Will create an extra bucket. | `bool` | `true` | no |
+| <a name="input_s3_force_destroy"></a> [s3\_force\_destroy](#input\_s3\_force\_destroy) | This value will force-delete your buckets with files sill inside. You have been warned. Do not use in Prod. | `bool` | `false` | no |
+| <a name="input_s3_log_expiration_in_days"></a> [s3\_log\_expiration\_in\_days](#input\_s3\_log\_expiration\_in\_days) | The number of days a log file has to live before expiration and permanent deletion. | `number` | `90` | no |
+| <a name="input_s3_log_transitions"></a> [s3\_log\_transitions](#input\_s3\_log\_transitions) | When log lifecycles are enabled, describe their transitions.  Use DEEP\_ARCHIVE if you plan on keeping data for 7-10 years or more. Good for meeting compliance. | <pre>set(object({<br>    days          = number,<br>    storage_class = string<br>  }))</pre> | <pre>[<br>  {<br>    "days": 30,<br>    "storage_class": "STANDARD_IA"<br>  },<br>  {<br>    "days": 60,<br>    "storage_class": "GLACIER"<br>  }<br>]</pre> | no |
+| <a name="input_s3_logs_expire"></a> [s3\_logs\_expire](#input\_s3\_logs\_expire) | Set to true if you want logs to eventually expire. | `bool` | `true` | no |
+| <a name="input_s3_use_bucket_encryption"></a> [s3\_use\_bucket\_encryption](#input\_s3\_use\_bucket\_encryption) | Set this to true to encrypt your buckets with a KMS key. | `bool` | `true` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to set on the resources. | `map(string)` | `{}` | no |
-| <a name="input_use_bucket_encryption"></a> [use\_bucket\_encryption](#input\_use\_bucket\_encryption) | Set this to true to encrypt your buckets with a KMS key. | `bool` | `true` | no |
-| <a name="input_use_default_domain"></a> [use\_default\_domain](#input\_use\_default\_domain) | Use CloudFront website address without Route53 and ACM certificate | `string` | `true` | no |
+| <a name="input_use_cloudfront_domain"></a> [use\_cloudfront\_domain](#input\_use\_cloudfront\_domain) | Use CloudFront website address without Route53 and ACM certificate | `string` | `true` | no |
 
 ## Outputs
 

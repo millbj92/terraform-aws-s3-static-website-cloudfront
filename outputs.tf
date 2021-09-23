@@ -20,7 +20,7 @@ output "s3_domain_name" {
 }
 
 output "website_address" {
-  value       = var.domain_name
+  value       = var.s3_bucket_name
   description = "If not using the 'default_domain' variable, this will return your Route53 domain name."
 }
 
