@@ -23,7 +23,7 @@ module "aws_s3_bucket_cloudfront" {
   source                               = "../"
   s3_primary_bucket_name               = var.s3_primary_bucket_name
   s3_enable_logging                    = var.s3_enable_logging
-  s3_enable_primary_bucket_lifecycle   = var.s3_enable_primary_bucket_replication
+  s3_enable_primary_bucket_lifecycle   = var.s3_enable_primary_bucket_lifecycle
   s3_enable_primary_bucket_replication = var.s3_enable_primary_bucket_replication
   s3_replication_region                = var.s3_replication_region
   s3_acl_grant_canonical_user          = var.s3_acl_grant_canonical_user

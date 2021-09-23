@@ -6,23 +6,55 @@ This module allows the creation of a static S3 website, with Cloudfront as the C
   - Enable KMS encryption on your S3 buckets
   - Enable KMS key rotation.
   - Enable access logging for buckets and Cloudfront.
+  - Configure custom ACL for buckets
+  - Enable replication of buckets
+  - Enable versioning on primary and replication buckets
+  - Enable lifecycle events for the primary and replication buckets, to archive and eventually delete versioned data.
+  - Enable failover on Cloudfront to your replication bucket whenever an error occurs on the primary.
+ ### Usage:
 
- Usage:
-
- Example of 's3_static_website" module in `main.tf`.
- **Note:** I am putting the values in the below snippet to show you example values. It's a good practice to put your values into variables, like I am doing [here](./example/main.tf)
+ **Note:** I am putting the values in the below snippet to show you example values. Almost all them except for 's3_primary_bucket_name' have reasonable defaults. It's a good practice to put your values into a .tfvars file and project them to the module, like I am doing [here](./example/main.tf)
 
  ```hcl
   module "s3_static_website" {
-  source                 = "millbj92/s3-static-website-cloudfront/aws"
-  domain_name            = "dev.example.com"
-  hosted_zone            = "example.com"
-  acm_certificate_domain = "*.abc.example.com"
-  use_default_domain     = false
-  logging                = true
-  use_bucket_encryption  = true
-  enable_key_rotation    = true
-  tags                   = var.tags
+  source                               = "millbj92/s3-static-website-cloudfront/aws"
+  s3_primary_bucket_name               = "myorg-cdn-distribution-12345"
+  s3_enable_logging                    = true
+  s3_enable_primary_bucket_lifecycle   = true
+  s3_enable_primary_bucket_replication = true
+  s3_replication_region                = "us-west-1"
+  s3_acl_grant_canonical_user          = false
+  s3_primary_bucket_acl                = "private"
+  s3_primary_acl_grants                = null
+  s3_routing_policy                    = null # To load a routing file: data.local_file.routing_rules_input.content
+  s3_enable_log_lifecycle              = true
+  s3_bucket_redirect                   = null
+  s3_primary_version_transitions       = [{
+                                            days          = 30,
+                                            storage_class = "STANDARD_IA",
+                                          },
+                                          {
+                                            days          = 60,
+                                            storage_class = "GLACIER",
+                                          }]
+  s3_primary_version_expiration        = 120
+  s3_log_transitions                   = var.s3_log_transitions
+  s3_logs_expire                       = var.s3_logs_expire
+  s3_log_expiration_in_days            = var.s3_log_expiration_in_days
+  s3_use_bucket_encryption             = true
+  s3_cors_rules                        = {allowed_headers = ["*"],
+                                          allowed_methods = ["GET"],
+                                          allowed_origins = ["*"],
+                                          expose_headers  = ["ETag"],
+                                          max_age_seconds = 3000}
+  s3_force_destroy                     = false
+  iam_assume_role_policy               = data.local_file.iam_assume_role_policy.content
+  kms_enable_key_rotation              = true
+  cloudfront_log_cookies               = false
+  cloudfront_price_class               = "PriceClass_100"
+  cloudfront_enable_failover           = true
+  use_cloudfront_domain                = true
+  tags                                 = var.tags
 }
  ```
 
@@ -50,7 +82,6 @@ No requirements.
 | Name | Version |
 |------|---------|
 | <a name="provider_aws"></a> [aws](#provider\_aws) | 3.59.0 |
-| <a name="provider_random"></a> [random](#provider\_random) | 3.1.0 |
 
 ## Modules
 
@@ -70,7 +101,6 @@ No modules.
 | [aws_s3_bucket.log_bucket](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket) | resource |
 | [aws_s3_bucket.replication](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket) | resource |
 | [aws_s3_bucket.s3_bucket](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket) | resource |
-| [random_uuid.test](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/uuid) | resource |
 | [aws_canonical_user_id.current_user](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/canonical_user_id) | data source |
 | [aws_iam_policy_document.cloudfront_failover_policy](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.s3_bucket_policy](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
@@ -89,7 +119,7 @@ No modules.
 | <a name="input_region"></a> [region](#input\_region) | Primary AWS region | `string` | `"us-east-1"` | no |
 | <a name="input_s3_acl_grant_canonical_user"></a> [s3\_acl\_grant\_canonical\_user](#input\_s3\_acl\_grant\_canonical\_user) | Find the canonical user id of the current acount and add it to the ACL. | `bool` | `false` | no |
 | <a name="input_s3_bucket_redirect"></a> [s3\_bucket\_redirect](#input\_s3\_bucket\_redirect) | Setting this string will make your s3 bucket redirect to the specified url. Used as a global redirect - this setting will redirect to another hostname no matter what. If you'd like more control, use the s3\_routing\_policy variable. | `string` | `null` | no |
-| <a name="input_s3_cors_rules"></a> [s3\_cors\_rules](#input\_s3\_cors\_rules) | n/a | <pre>object({<br>    allowed_headers = list(string),<br>    allowed_methods = list(string),<br>    allowed_origins = list(string),<br>    expose_headers  = list(string),<br>    max_age_seconds = number<br>  })</pre> | <pre>{<br>  "allowed_headers": [<br>    "*"<br>  ],<br>  "allowed_methods": [<br>    "GET"<br>  ],<br>  "allowed_origins": [<br>    "*"<br>  ],<br>  "expose_headers": [<br>    "ETag"<br>  ],<br>  "max_age_seconds": 3000<br>}</pre> | no |
+| <a name="input_s3_cors_rules"></a> [s3\_cors\_rules](#input\_s3\_cors\_rules) | Cross Origin Resource Sharing configurations for the primary and replication buckets. | <pre>object({<br>    allowed_headers = list(string),<br>    allowed_methods = list(string),<br>    allowed_origins = list(string),<br>    expose_headers  = list(string),<br>    max_age_seconds = number<br>  })</pre> | <pre>{<br>  "allowed_headers": [<br>    "*"<br>  ],<br>  "allowed_methods": [<br>    "GET"<br>  ],<br>  "allowed_origins": [<br>    "*"<br>  ],<br>  "expose_headers": [<br>    "ETag"<br>  ],<br>  "max_age_seconds": 3000<br>}</pre> | no |
 | <a name="input_s3_enable_log_lifecycle"></a> [s3\_enable\_log\_lifecycle](#input\_s3\_enable\_log\_lifecycle) | Enable lifecycle rules on log buckets for archiving data. | `bool` | `true` | no |
 | <a name="input_s3_enable_logging"></a> [s3\_enable\_logging](#input\_s3\_enable\_logging) | Use logging for resources. Will create an extra bucket. | `bool` | `true` | no |
 | <a name="input_s3_enable_primary_bucket_lifecycle"></a> [s3\_enable\_primary\_bucket\_lifecycle](#input\_s3\_enable\_primary\_bucket\_lifecycle) | Enable lifecycle rules for primary buckets. This will only effect previous versions of the bucket, and not the live data. | `bool` | `true` | no |
@@ -98,9 +128,9 @@ No modules.
 | <a name="input_s3_log_expiration_in_days"></a> [s3\_log\_expiration\_in\_days](#input\_s3\_log\_expiration\_in\_days) | The number of days a log file has to live before expiration and permanent deletion. | `number` | `90` | no |
 | <a name="input_s3_log_transitions"></a> [s3\_log\_transitions](#input\_s3\_log\_transitions) | When log lifecycles are enabled, describe their transitions.  Use DEEP\_ARCHIVE if you plan on keeping data for 7-10 years or more. Good for meeting compliance. | <pre>set(object({<br>    days          = number,<br>    storage_class = string<br>  }))</pre> | <pre>[<br>  {<br>    "days": 30,<br>    "storage_class": "STANDARD_IA"<br>  },<br>  {<br>    "days": 60,<br>    "storage_class": "GLACIER"<br>  }<br>]</pre> | no |
 | <a name="input_s3_logs_expire"></a> [s3\_logs\_expire](#input\_s3\_logs\_expire) | Set to true if you want logs to eventually expire. | `bool` | `true` | no |
-| <a name="input_s3_primary_acl_grants"></a> [s3\_primary\_acl\_grants](#input\_s3\_primary\_acl\_grants) | n/a | <pre>set(object({<br>    id           = string<br>    type         = string<br>    permissions  = list(string)<br>    uri          = string<br>    emailAddress = string<br>  }))</pre> | `[]` | no |
+| <a name="input_s3_primary_acl_grants"></a> [s3\_primary\_acl\_grants](#input\_s3\_primary\_acl\_grants) | Custom Access Control List grants for primary and replication buckets. Conflicts with 's3\_primary\_bucket\_acl'. | <pre>set(object({<br>    id           = string<br>    type         = string<br>    permissions  = list(string)<br>    uri          = string<br>    emailAddress = string<br>  }))</pre> | `[]` | no |
 | <a name="input_s3_primary_bucket_acl"></a> [s3\_primary\_bucket\_acl](#input\_s3\_primary\_bucket\_acl) | Access Control List of the primary bucket. Setting it to anything above private is not recommended. | `string` | `"private"` | no |
-| <a name="input_s3_primary_version_expiration"></a> [s3\_primary\_version\_expiration](#input\_s3\_primary\_version\_expiration) | n/a | `number` | `120` | no |
+| <a name="input_s3_primary_version_expiration"></a> [s3\_primary\_version\_expiration](#input\_s3\_primary\_version\_expiration) | The time it takes, in days, for non-current versioned files to expire. | `number` | `120` | no |
 | <a name="input_s3_primary_version_transitions"></a> [s3\_primary\_version\_transitions](#input\_s3\_primary\_version\_transitions) | Back up previous versions of all files into a glacier account after a specified amount of time. | <pre>set(object({<br>    days          = number,<br>    storage_class = string<br>  }))</pre> | <pre>[<br>  {<br>    "days": 30,<br>    "storage_class": "STANDARD_IA"<br>  },<br>  {<br>    "days": 100,<br>    "storage_class": "GLACIER"<br>  }<br>]</pre> | no |
 | <a name="input_s3_replication_region"></a> [s3\_replication\_region](#input\_s3\_replication\_region) | The region your primary bucket will replicate to. | `string` | `"us-west-1"` | no |
 | <a name="input_s3_routing_policy"></a> [s3\_routing\_policy](#input\_s3\_routing\_policy) | s3 bucket routing policy, defined in json, or EOF format. Used for setting fine-tuned redirects from one sub-directory to another, or to another host altogether. | `string` | `null` | no |

@@ -61,6 +61,7 @@ variable "s3_primary_bucket_acl" {
 }
 
 variable "s3_primary_acl_grants" {
+  description = "Custom Access Control List grants for primary and replication buckets. Conflicts with 's3_primary_bucket_acl'."
   type = set(object({
     id           = string
     type         = string
@@ -120,8 +121,9 @@ variable "s3_primary_version_transitions" {
 }
 
 variable "s3_primary_version_expiration" {
-  type    = number
-  default = 120
+  description = "The time it takes, in days, for non-current versioned files to expire."
+  type        = number
+  default     = 120
 }
 
 variable "s3_log_transitions" {
@@ -164,6 +166,7 @@ variable "s3_use_bucket_encryption" {
   description = "Set this to true to encrypt your buckets with a KMS key."
 }
 variable "s3_cors_rules" {
+  description = "Cross Origin Resource Sharing configurations for the primary and replication buckets."
   type = object({
     allowed_headers = list(string),
     allowed_methods = list(string),

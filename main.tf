@@ -353,9 +353,6 @@ resource "aws_s3_bucket" "s3_bucket" {
     }
   }
 }
-
-resource "random_uuid" "test" {
-}
 resource "aws_cloudfront_distribution" "s3_distribution" {
   dynamic "origin_group" {
     for_each = var.cloudfront_enable_failover == true ? [1] : []
