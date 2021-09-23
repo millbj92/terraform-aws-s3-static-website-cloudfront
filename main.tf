@@ -8,7 +8,7 @@ provider "aws" {
 
 locals {
   default_certs = var.use_default_domain ? ["default"] : []
-  acm_certs     = var.use_default_domain ? [] : ["acm"]
+  acm_certs     = var.use_default_domain && var.aws_certificate_arn ? [] : ["acm"]
   domain_name   = var.use_default_domain ? [] : [var.domain_name]
 }
 resource "aws_kms_key" "log_bucket" {

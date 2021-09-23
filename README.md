@@ -1,6 +1,6 @@
 # S3_Bucket_And_Cloudfront
 
-This module allows the creation of a static S3 website, with Cloudfront as the CDN, with automatic ACM and Route53 configurations.
+This module allows the creation of a static S3 website, with Cloudfront as the CDN, without ACM configurations. This is useful when you want to host files, or a website, over a CDN but don't necessarily need a domain name.
 
  Optionally you can also use this module to:
   - Enable KMS encryption on your S3 buckets
