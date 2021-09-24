@@ -373,7 +373,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
     }
   }
   origin {
-    domain_name = "${var.s3_primary_bucket_name}.s3.amazonaws.com"
+    domain_name = aws_s3_bucket.s3_bucket.bucket_regional_domain_name
     origin_id   = "${var.s3_primary_bucket_name}-cloudfront-primary"
 
     s3_origin_config {
